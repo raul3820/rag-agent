@@ -108,3 +108,5 @@ Refer to the official NVIDIA documentation for detailed information:
 ## Contributions
 
 This is an open work in progress, feel free to fork or propose changes.
+
+This project was inspired by [https://github.com/coleam00](https://github.com/coleam00)
