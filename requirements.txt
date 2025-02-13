@@ -1,0 +1,6 @@
+pydantic-ai-slim[openai]==0.0.23
+Crawl4AI==0.4.248
+asyncpg==0.30.0
+logfire[asyncpg]==3.5.0
+infinity_client==0.0.75
+fastapi==0.111.0

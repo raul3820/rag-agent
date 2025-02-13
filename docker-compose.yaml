@@ -1,0 +1,117 @@
+networks:
+  rag-agent:
+    driver: bridge
+
+volumes:
+  agent:
+  ollama:
+  open-webui:
+  pgdata:
+  infinity:
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: dockerfile.agent
+    container_name: agent
+    networks:
+      - rag-agent
+    ports:
+      - "11433:11433"
+    volumes:
+      - agent:/root/.agent
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - ollama
+      - infinity
+    restart: unless-stopped
+  
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    networks:
+      - rag-agent
+    ports:
+      - "3000:8080"
+    volumes:
+      - open-webui:/app/backend/data
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_BASE_URL=http://agent:11433
+      - OPENAI_API_KEY=${API_KEY_OPENAI}
+      - ENABLE_OLLAMA_API=False
+      - ENABLE_EVALUATION_ARENA_MODELS=False
+      - DEFAULT_USER_ROLE=user
+      - TASK_MODEL=${SMALL_MODEL}
+      - TASK_MODEL_EXTERNAL=${SMALL_MODEL}
+      - VECTOR_DB=pgvector
+      - PGVECTOR_DB_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432
+    depends_on:
+      - agent
+      - postgres
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    build:
+      context: .
+      dockerfile: dockerfile.ollama
+    container_name: ollama
+    networks:
+      - rag-agent
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  infinity:
+    image: michaelf34/infinity:latest-cpu
+    container_name: infinity
+    networks:
+      - rag-agent
+    env_file:
+      - .env
+    ports:
+      - "7997:7997"
+    volumes:
+      - infinity:/app/.cache
+    command: >
+      v2 --model-id ${EMBEDDINGS_MODEL}
+      --revision main
+      --dtype float16
+      --batch-size 8
+      --engine optimum
+      --port 7997
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: rag-pg
+    networks:
+      - rag-agent
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "54320:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
