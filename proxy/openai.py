@@ -137,22 +137,54 @@ async def to_agent_inference(chat_request: dict, agent_manager: AgentManager) ->
 
 async def to_openai(request: Request, api_url: str, api_key: str) -> StreamingResponse:
     """Proxy forward to OpenAI API."""
-    headers = {**request.headers, "Authorization": f"Bearer {api_key}"}
+    headers = {**request.headers, "authorization": f"Bearer {api_key}"}
+    request_content = await request.body()
+    request_content_str = request_content.decode("utf-8")
     
-    async with httpx.AsyncClient() as client:
-        response = await client.request(
-            method=request.method,
-            url=api_url + str(request.url.path),
-            headers=headers,
-            content=await request.body(),
-        )
+    if request_content_str and json.loads(request_content_str).get("stream"):
+        upstream_media_type = None
+
+        async def stream_generator():
+            nonlocal upstream_media_type
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream(
+                    method=request.method,
+                    url=api_url + str(request.url.path),
+                    headers=headers,
+                    content=request_content,
+                ) as upstream_response:
+                    upstream_media_type = upstream_response.headers.get(
+                        "content-type", "application/octet-stream"
+                    )
+                    async for chunk in upstream_response.aiter_bytes():
+                        yield chunk
+
+        # prime stream_generator to capture the media type
+        gen = stream_generator().__aiter__()
+        try:
+            first_chunk = await gen.__anext__()
+        except StopAsyncIteration:
+            first_chunk = b""
+        
+        async def final_generator():
+            yield first_chunk
+            async for chunk in gen:
+                yield chunk
 
         return StreamingResponse(
-            content=response.aiter_bytes(),
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            media_type=response.headers.get("Content-Type", "application/json"),
+            content=final_generator(),
+            media_type=upstream_media_type or "application/octet-stream",
         )
-    
-
-
+    else:
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=request.method,
+                url=api_url + str(request.url.path),
+                headers=headers,
+                content=request_content,
+            )
+            return StreamingResponse(
+                content=response.aiter_bytes(),
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
