@@ -69,6 +69,11 @@ services:
       - ollama:/root/.ollama
     env_file:
       - .env
+    environment:
+      OLLAMA_FLASH_ATTENTION : 1
+      OLLAMA_KV_CACHE_TYPE: q8_0
+      OLLAMA_KEEP_ALIVE: -1
+      OLLAMA_NUM_PARALLEL: 2
     depends_on:
       - postgres
     restart: unless-stopped
