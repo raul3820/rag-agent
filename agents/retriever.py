@@ -150,10 +150,10 @@ class Retriever:
                     For "title": Extract or derive a descriptive title.
                     For "summary": What are the main points in this chunk? Include keywords.
 
-                    Chunk: {source} {chunk}
+                    <chunk> {source} {chunk} </chunk>
                 """,
                 result_type=Abstract,
-                model_settings={'temperature': 0.25, 'max_tokens': 1024},
+                model_settings={'temperature': 0.1, 'max_tokens': 512},
                 
             )
             return r.data, True
@@ -169,20 +169,21 @@ class Retriever:
 
     async def _get_languages(self, chunk: str, source: str) -> tuple[List[str], bool]:
         retries: int = self.agent._max_result_retries
-        
-        for attempt in range(retries):
+        temp = 0.0
+        for attempt in range(retries+1):
             try:
                 r = await self.agent.run(
                     f"""
                         Return a list of programming languages used in this chunk, if any. Only the list, CSV format, no extra characters, no Markdown.
-                        Chunk: {source} {chunk}
+                        <chunk> {source} {chunk} </chunk>
                     """,
-                    model_settings={'temperature': 0.25, 'max_tokens': 1024},
+                    model_settings={'temperature': temp, 'max_tokens': 256},
                 )
                 r = self._extract_languages(r.data, programming_languages)
                 if r:
                     return (r, True)
-                chunk = chunk[:int(len(chunk)*0.5)]
+                chunk = chunk[-int(len(chunk)*0.5):]
+                temp += 1 / max(1,retries)
             except Exception as e:
                 logfire.exception(f"_get_languages attempt {attempt + 1}/{retries} failed: {e}")
                 
@@ -265,10 +266,14 @@ class Retriever:
         return chunks
 
     async def _get_processed_meta(self, chunk: str, source: str = '') -> tuple[ProcessedMetadata, List[float], bool]:
-        abstract, is_meta_success = await self._get_abstract(chunk, source)
-        languages, _  = await self._get_languages(chunk, source)
-        
-        embedding_string = f"{source} {abstract.title} {abstract.summary} {chunk}"
+        abstract_task = self._get_abstract(chunk[-self._chunk_char_size:], source)
+        languages_task = self._get_languages(chunk[-self._chunk_char_size:], source)
+        # concurrently
+        abstract_result, languages_result = await asyncio.gather(abstract_task, languages_task)
+        abstract, is_meta_success = abstract_result
+        languages, _  = languages_result
+
+        embedding_string = f"{source} {abstract.title} {abstract.summary} {chunk[-self._chunk_char_size:]}"
         processed_metadata = ProcessedMetadata(
             title=abstract.title,
             summary=abstract.summary,
@@ -318,7 +323,7 @@ class Retriever:
         Yields progress updates during processing and storage.
         """
         try:
-            yield f"Processing {url} ...\n"
+            yield f"Processing {url} \n"
             chunks = self._chunk_text(markdown)
             
             tasks = [
