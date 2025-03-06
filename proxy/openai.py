@@ -30,7 +30,7 @@ def to_openai_messages(messages: List[ModelMessage]) -> List[ChatCompletionMessa
     return list(chain(*(OpenAIModel._map_message(m) for m in messages)))
 
 
-def to_pydantic_message(message_param: ChatCompletionMessageParam) -> List[ModelMessage]:
+def to_pydantic_message(message_param: ChatCompletionMessageParam) -> ModelMessage:
     """
     Maps an `openai.types.ChatCompletionMessageParam` back to `pydantic_ai.ModelMessage`.
     """

@@ -23,10 +23,6 @@ services:
       - agent:/root/.agent
     env_file:
       - .env
-    depends_on:
-      - postgres
-      - ollama
-      - infinity
     restart: unless-stopped
   
   open-webui:
@@ -50,10 +46,6 @@ services:
       - TASK_MODEL_EXTERNAL=${SMALL_MODEL}
       - VECTOR_DB=pgvector
       - PGVECTOR_DB_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432
-    depends_on:
-      - agent
-      - postgres
-      - ollama
     restart: unless-stopped
 
   ollama:
@@ -73,9 +65,7 @@ services:
       OLLAMA_FLASH_ATTENTION : 1
       OLLAMA_KV_CACHE_TYPE: q8_0
       OLLAMA_KEEP_ALIVE: -1
-      OLLAMA_NUM_PARALLEL: 2
-    depends_on:
-      - postgres
+      OLLAMA_NUM_PARALLEL: 4
     restart: unless-stopped
     deploy:
       resources:
